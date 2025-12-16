@@ -8,42 +8,56 @@ export function AuthProvider({ children }) {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        let isMounted = true;
+
         // Check active session on mount
         const checkSession = async () => {
             console.log('Checking session...');
             try {
                 const { data: { session } } = await supabase.auth.getSession();
                 console.log('Session result:', session);
-                if (session?.user) {
+                if (session?.user && isMounted) {
                     await fetchProfile(session.user.id);
                 }
             } catch (err) {
                 console.error('Session check error:', err);
             } finally {
-                console.log('Setting loading to false');
-                setLoading(false);
+                if (isMounted) {
+                    console.log('Setting loading to false');
+                    setLoading(false);
+                }
             }
         };
 
         // Start session check
         checkSession();
 
-        // Failsafe: if loading takes more than 5 seconds, force it to stop
+        // Failsafe: if loading takes more than 10 seconds, force it to stop
         const timeout = setTimeout(() => {
-            console.log('Timeout reached, forcing loading to stop');
-            setLoading(false);
-        }, 5000);
+            if (isMounted && loading) {
+                console.log('Timeout reached, forcing loading to stop');
+                setLoading(false);
+            }
+        }, 10000);
 
-        // Listen for auth changes
+        // Listen for auth changes - this helps maintain session on refresh
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+            console.log('Auth state changed:', event, session?.user?.id);
+            if (!isMounted) return;
+
             if (event === 'SIGNED_IN' && session?.user) {
                 await fetchProfile(session.user.id);
+                setLoading(false);
             } else if (event === 'SIGNED_OUT') {
                 setCurrentUser(null);
+                setLoading(false);
+            } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+                await fetchProfile(session.user.id);
             }
         });
 
         return () => {
+            isMounted = false;
             clearTimeout(timeout);
             subscription.unsubscribe();
         };
