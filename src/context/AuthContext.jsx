@@ -10,14 +10,17 @@ export function AuthProvider({ children }) {
     useEffect(() => {
         // Check active session on mount
         const checkSession = async () => {
+            console.log('Checking session...');
             try {
                 const { data: { session } } = await supabase.auth.getSession();
+                console.log('Session result:', session);
                 if (session?.user) {
                     await fetchProfile(session.user.id);
                 }
             } catch (err) {
                 console.error('Session check error:', err);
             }
+            console.log('Setting loading to false');
             setLoading(false);
         };
 
