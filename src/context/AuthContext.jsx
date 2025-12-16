@@ -51,10 +51,16 @@ export function AuthProvider({ children }) {
 
     const signup = async (firstName, lastName, email, password) => {
         try {
-            // Sign up with Supabase Auth
+            // Sign up with Supabase Auth - pass names in metadata for trigger
             const { data: authData, error: authError } = await supabase.auth.signUp({
                 email,
-                password
+                password,
+                options: {
+                    data: {
+                        first_name: firstName,
+                        last_name: lastName
+                    }
+                }
             });
 
             if (authError) {
@@ -65,19 +71,7 @@ export function AuthProvider({ children }) {
                 return { success: false, error: 'Sign up failed' };
             }
 
-            // Create profile
-            const { error: profileError } = await supabase
-                .from('profiles')
-                .insert({
-                    id: authData.user.id,
-                    first_name: firstName,
-                    last_name: lastName
-                });
-
-            if (profileError) {
-                return { success: false, error: profileError.message };
-            }
-
+            // Profile is created automatically by database trigger
             // Set current user
             setCurrentUser({
                 id: authData.user.id,
