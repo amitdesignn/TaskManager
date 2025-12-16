@@ -43,16 +43,33 @@ export function AdminPanel({ onClose }) {
             return;
         }
 
-        // Delete from profiles (tasks will cascade delete due to foreign key)
-        const { error } = await supabase
+        console.log('Attempting to delete user:', userId);
+
+        // First delete user's tasks
+        const { error: tasksError } = await supabase
+            .from('tasks')
+            .delete()
+            .eq('user_id', userId);
+
+        if (tasksError) {
+            console.error('Error deleting tasks:', tasksError);
+        }
+
+        // Then delete profile
+        const { error, data } = await supabase
             .from('profiles')
             .delete()
-            .eq('id', userId);
+            .eq('id', userId)
+            .select();
 
-        if (!error) {
-            setUsers(users.filter(u => u.id !== userId));
-        } else {
+        console.log('Delete result:', { error, data });
+
+        if (error) {
             alert('Failed to delete user: ' + error.message);
+            console.error('Delete error:', error);
+        } else {
+            setUsers(users.filter(u => u.id !== userId));
+            alert('User deleted successfully!');
         }
     };
 
