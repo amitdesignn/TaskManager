@@ -19,12 +19,20 @@ export function AuthProvider({ children }) {
                 }
             } catch (err) {
                 console.error('Session check error:', err);
+            } finally {
+                console.log('Setting loading to false');
+                setLoading(false);
             }
-            console.log('Setting loading to false');
-            setLoading(false);
         };
 
+        // Start session check
         checkSession();
+
+        // Failsafe: if loading takes more than 5 seconds, force it to stop
+        const timeout = setTimeout(() => {
+            console.log('Timeout reached, forcing loading to stop');
+            setLoading(false);
+        }, 5000);
 
         // Listen for auth changes
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -35,7 +43,10 @@ export function AuthProvider({ children }) {
             }
         });
 
-        return () => subscription.unsubscribe();
+        return () => {
+            clearTimeout(timeout);
+            subscription.unsubscribe();
+        };
     }, []);
 
     const fetchProfile = async (userId) => {
