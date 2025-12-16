@@ -10,9 +10,13 @@ export function AuthProvider({ children }) {
     useEffect(() => {
         // Check active session on mount
         const checkSession = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session?.user) {
-                await fetchProfile(session.user.id);
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session?.user) {
+                    await fetchProfile(session.user.id);
+                }
+            } catch (err) {
+                console.error('Session check error:', err);
             }
             setLoading(false);
         };
@@ -32,21 +36,33 @@ export function AuthProvider({ children }) {
     }, []);
 
     const fetchProfile = async (userId) => {
-        const { data, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', userId)
-            .single();
+        try {
+            const { data, error } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', userId)
+                .single();
 
-        if (data && !error) {
-            setCurrentUser({
-                id: data.id,
-                firstName: data.first_name,
-                lastName: data.last_name,
-                initials: `${data.first_name.charAt(0)}${data.last_name.charAt(0)}`.toUpperCase(),
-                email: (await supabase.auth.getUser()).data.user?.email,
-                isAdmin: data.is_admin || false
-            });
+            if (error) {
+                console.error('Profile fetch error:', error);
+                // If profile doesn't exist, still allow user to proceed
+                setCurrentUser(null);
+                return;
+            }
+
+            if (data) {
+                setCurrentUser({
+                    id: data.id,
+                    firstName: data.first_name || 'User',
+                    lastName: data.last_name || '',
+                    initials: `${(data.first_name || 'U').charAt(0)}${(data.last_name || '').charAt(0) || 'U'}`.toUpperCase(),
+                    email: (await supabase.auth.getUser()).data.user?.email,
+                    isAdmin: data.is_admin || false
+                });
+            }
+        } catch (err) {
+            console.error('Profile fetch exception:', err);
+            setCurrentUser(null);
         }
     };
 
