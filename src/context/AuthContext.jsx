@@ -44,7 +44,8 @@ export function AuthProvider({ children }) {
                 firstName: data.first_name,
                 lastName: data.last_name,
                 initials: `${data.first_name.charAt(0)}${data.last_name.charAt(0)}`.toUpperCase(),
-                email: (await supabase.auth.getUser()).data.user?.email
+                email: (await supabase.auth.getUser()).data.user?.email,
+                isAdmin: data.is_admin || false
             });
         }
     };
