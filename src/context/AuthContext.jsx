@@ -54,6 +54,7 @@ export function AuthProvider({ children }) {
 
     useEffect(() => {
         let isMounted = true;
+        let isProcessingSession = false;
 
         const fetchProfileWithRetry = async (authUser, retries = 3) => {
             for (let i = 0; i < retries; i++) {
@@ -76,35 +77,43 @@ export function AuthProvider({ children }) {
             };
         };
 
-        // Get initial session
-        const initSession = async () => {
+        const handleSession = async (session, eventName) => {
+            if (isProcessingSession) {
+                console.log('Already processing session, skipping:', eventName);
+                return;
+            }
+            isProcessingSession = true;
+
             try {
-                const { data: { session }, error } = await supabase.auth.getSession();
-
-                if (error) {
-                    console.error('Session error:', error);
-                    if (isMounted) setLoading(false);
-                    return;
-                }
-
                 if (session?.user && isMounted) {
-                    console.log('Restoring session for:', session.user.email);
+                    console.log(`Processing session (${eventName}) for:`, session.user.email);
                     const profile = await fetchProfileWithRetry(session.user);
                     if (profile && isMounted) {
                         profile.email = session.user.email;
                         setCurrentUser(profile);
+                        console.log('User set successfully:', profile.firstName);
                     }
+                } else if (isMounted) {
+                    console.log('No session, setting currentUser to null');
+                    setCurrentUser(null);
                 }
-                if (isMounted) setLoading(false);
-            } catch (err) {
-                console.error('Init session error:', err);
+            } finally {
+                isProcessingSession = false;
                 if (isMounted) setLoading(false);
             }
         };
 
-        initSession();
+        // Get initial session synchronously to avoid race conditions
+        supabase.auth.getSession().then(({ data: { session }, error }) => {
+            if (error) {
+                console.error('Session error:', error);
+                if (isMounted) setLoading(false);
+                return;
+            }
+            handleSession(session, 'INITIAL');
+        });
 
-        // Listen for auth changes
+        // Listen for auth changes (login, logout, token refresh)
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
             console.log('Auth event:', event);
 
@@ -116,16 +125,14 @@ export function AuthProvider({ children }) {
                 return;
             }
 
-            if (session?.user) {
-                const profile = await fetchProfileWithRetry(session.user);
-                if (profile && isMounted) {
-                    profile.email = session.user.email;
-                    setCurrentUser(profile);
-                }
-            } else {
-                setCurrentUser(null);
+            // Skip INITIAL_SESSION since we handle it above
+            if (event === 'INITIAL_SESSION') {
+                console.log('Skipping INITIAL_SESSION (handled by getSession)');
+                return;
             }
-            if (isMounted) setLoading(false);
+
+            // Handle other auth events (SIGNED_IN, TOKEN_REFRESHED, etc.)
+            await handleSession(session, event);
         });
 
         return () => {
