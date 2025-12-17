@@ -38,35 +38,74 @@ export function AuthProvider({ children }) {
     };
 
     useEffect(() => {
-        // Get initial session
-        supabase.auth.getSession().then(async ({ data: { session } }) => {
-            if (session?.user) {
-                const profile = await fetchProfile(session.user.id);
-                if (profile) {
-                    profile.email = session.user.email;
-                    setCurrentUser(profile);
-                }
+        let isMounted = true;
+
+        const fetchProfileWithRetry = async (userId, retries = 3) => {
+            for (let i = 0; i < retries; i++) {
+                const profile = await fetchProfile(userId);
+                if (profile) return profile;
+                // Wait before retrying (profile might not be created yet)
+                await new Promise(resolve => setTimeout(resolve, 500));
             }
-            setLoading(false);
-        });
+            return null;
+        };
+
+        // Get initial session
+        const initSession = async () => {
+            try {
+                const { data: { session }, error } = await supabase.auth.getSession();
+
+                if (error) {
+                    console.error('Session error:', error);
+                    if (isMounted) setLoading(false);
+                    return;
+                }
+
+                if (session?.user && isMounted) {
+                    console.log('Restoring session for:', session.user.email);
+                    const profile = await fetchProfileWithRetry(session.user.id);
+                    if (profile && isMounted) {
+                        profile.email = session.user.email;
+                        setCurrentUser(profile);
+                    }
+                }
+                if (isMounted) setLoading(false);
+            } catch (err) {
+                console.error('Init session error:', err);
+                if (isMounted) setLoading(false);
+            }
+        };
+
+        initSession();
 
         // Listen for auth changes
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
             console.log('Auth event:', event);
 
+            if (!isMounted) return;
+
+            if (event === 'SIGNED_OUT') {
+                setCurrentUser(null);
+                setLoading(false);
+                return;
+            }
+
             if (session?.user) {
-                const profile = await fetchProfile(session.user.id);
-                if (profile) {
+                const profile = await fetchProfileWithRetry(session.user.id);
+                if (profile && isMounted) {
                     profile.email = session.user.email;
                     setCurrentUser(profile);
                 }
             } else {
                 setCurrentUser(null);
             }
-            setLoading(false);
+            if (isMounted) setLoading(false);
         });
 
-        return () => subscription.unsubscribe();
+        return () => {
+            isMounted = false;
+            subscription.unsubscribe();
+        };
     }, []);
 
     const signup = async (firstName, lastName, email, password) => {
