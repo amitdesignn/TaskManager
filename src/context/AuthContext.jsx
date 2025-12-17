@@ -7,8 +7,9 @@ export function AuthProvider({ children }) {
     const [currentUser, setCurrentUser] = useState(null);
     const [loading, setLoading] = useState(true);
 
-    const fetchProfile = async (userId) => {
+    const fetchProfile = async (userId, authUser = null) => {
         try {
+            console.log('Fetching profile for user:', userId);
             const { data, error } = await supabase
                 .from('profiles')
                 .select('*')
@@ -17,10 +18,24 @@ export function AuthProvider({ children }) {
 
             if (error) {
                 console.error('Profile fetch error:', error);
+                // Fallback to auth user metadata if profile fetch fails
+                if (authUser) {
+                    console.log('Using auth metadata as fallback');
+                    const metadata = authUser.user_metadata || {};
+                    return {
+                        id: userId,
+                        firstName: metadata.first_name || 'User',
+                        lastName: metadata.last_name || '',
+                        initials: `${(metadata.first_name || 'U').charAt(0)}${(metadata.last_name || '').charAt(0) || 'U'}`.toUpperCase(),
+                        email: authUser.email,
+                        isAdmin: false
+                    };
+                }
                 return null;
             }
 
             if (data) {
+                console.log('Profile fetched successfully:', data);
                 return {
                     id: data.id,
                     firstName: data.first_name || 'User',
@@ -40,14 +55,25 @@ export function AuthProvider({ children }) {
     useEffect(() => {
         let isMounted = true;
 
-        const fetchProfileWithRetry = async (userId, retries = 3) => {
+        const fetchProfileWithRetry = async (authUser, retries = 3) => {
             for (let i = 0; i < retries; i++) {
-                const profile = await fetchProfile(userId);
+                // On last retry, pass authUser for fallback
+                const profile = await fetchProfile(authUser.id, i === retries - 1 ? authUser : null);
                 if (profile) return profile;
                 // Wait before retrying (profile might not be created yet)
                 await new Promise(resolve => setTimeout(resolve, 500));
             }
-            return null;
+            // Final fallback using auth metadata
+            console.log('All retries failed, using auth metadata fallback');
+            const metadata = authUser.user_metadata || {};
+            return {
+                id: authUser.id,
+                firstName: metadata.first_name || 'User',
+                lastName: metadata.last_name || '',
+                initials: `${(metadata.first_name || 'U').charAt(0)}${(metadata.last_name || '').charAt(0) || 'U'}`.toUpperCase(),
+                email: authUser.email,
+                isAdmin: false
+            };
         };
 
         // Get initial session
@@ -63,7 +89,7 @@ export function AuthProvider({ children }) {
 
                 if (session?.user && isMounted) {
                     console.log('Restoring session for:', session.user.email);
-                    const profile = await fetchProfileWithRetry(session.user.id);
+                    const profile = await fetchProfileWithRetry(session.user);
                     if (profile && isMounted) {
                         profile.email = session.user.email;
                         setCurrentUser(profile);
@@ -91,7 +117,7 @@ export function AuthProvider({ children }) {
             }
 
             if (session?.user) {
-                const profile = await fetchProfileWithRetry(session.user.id);
+                const profile = await fetchProfileWithRetry(session.user);
                 if (profile && isMounted) {
                     profile.email = session.user.email;
                     setCurrentUser(profile);
